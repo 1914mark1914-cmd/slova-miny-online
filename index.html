@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Слова-Мины Online</title>
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body { background: #0f172a; color: #f8fafc; min-height: 100vh; display: flex; justify-content: center; align-items: center; padding: 20px; }
+    .card { background: #1e293b; border-radius: 16px; padding: 30px; width: 100%; max-width: 500px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; }
+    h1 { color: #ef4444; margin-bottom: 20px; font-size: 2rem; }
+    input { width: 100%; padding: 12px 16px; border-radius: 8px; border: 1px solid #334155; background: #0f172a; color: #fff; font-size: 1rem; margin-bottom: 12px; outline: none; }
+    input:focus { border-color: #ef4444; }
+    button { width: 100%; padding: 12px; border: none; border-radius: 8px; background: #ef4444; color: white; font-weight: bold; font-size: 1rem; cursor: pointer; transition: 0.2s; margin-bottom: 10px; }
+    button:hover { background: #dc2626; }
+    .status { margin-top: 15px; color: #94a3b8; font-size: 0.9rem; }
+    .player-list { text-align: left; background: #0f172a; padding: 15px; border-radius: 8px; margin-top: 15px; }
+    .player-item { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #334155; }
+  </style>
+</head>
+<body>
+
+  <div class="card" id="app">
+    <h1>💣 Слова-Мины</h1>
+    
+    <!-- Шаг 1: Вход -->
+    <div id="login-screen">
+      <input type="text" id="nickname" placeholder="Ваш никнейм" value="Игрок">
+      <input type="text" id="room-id" placeholder="Код комнаты (например: ROOM1)" value="ROOM1">
+      <button onclick="joinRoom()">Войти в комнату</button>
+    </div>
+
+    <!-- Шаг 2: Комната -->
+    <div id="room-screen" style="display: none;">
+      <h2>Комната: <span id="display-room" style="color: #ef4444;"></span></h2>
+      <div class="status">Ожидание игроков...</div>
+      
+      <div class="player-list">
+        <h3>Участники:</h3>
+        <div id="players-container"></div>
+      </div>
+
+      <div style="margin-top: 20px;">
+        <input type="text" id="mine-word" placeholder="Введи 1 слово-мину">
+        <button onclick="submitMine()">Заложить мину 💣</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Твой сервер на Render
+    const socket = io('https://word-mines-server-2zsxc.onrender.com');
+
+    let currentRoom = '';
+
+    function joinRoom() {
+      const name = document.getElementById('nickname').value;
+      currentRoom = document.getElementById('room-id').value.toUpperCase();
+
+      if (!name || !currentRoom) return alert('Заполните все поля!');
+
+      socket.emit('join_room', { roomId: currentRoom, playerName: name });
+
+      document.getElementById('login-screen').style.display = 'none';
+      document.getElementById('room-screen').style.display = 'block';
+      document.getElementById('display-room').innerText = currentRoom;
+    }
+
+    function submitMine() {
+      const mine = document.getElementById('mine-word').value.trim();
+      if (!mine || mine.includes(' ')) {
+        return alert('Введи ровно одно слово!');
+      }
+
+      socket.emit('submit_mine', { roomId: currentRoom, mineWord: mine });
+      alert('Мина заложена!');
+      document.getElementById('mine-word').value = '';
+    }
+
+    socket.on('update_room_state', (roomData) => {
+      const container = document.getElementById('players-container');
+      container.innerHTML = '';
+      roomData.players.forEach(p => {
+        container.innerHTML += `<div class="player-item"><span>${p.name}</span><b>${p.score} очков</b></div>`;
+      });
+    });
+
+    socket.on('mine_received', (data) => {
+      console.log('Кто-то заложил мину:', data);
+    });
+  </script>
+</body>
+</html>
