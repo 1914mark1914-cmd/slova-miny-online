@@ -1,0 +1,1 @@
+# slova-miny-online
