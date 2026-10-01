@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Слова-мины Online</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background: #1a1a2e; color: #fff; margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .container { background: #16213e; padding: 25px; border-radius: 15px; width: 100%; max-width: 500px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); text-align: center; }
+        h1 { margin-top: 0; color: #e94560; }
+        input, button { width: 100%; padding: 12px; margin: 8px 0; border-radius: 8px; border: none; font-size: 16px; }
+        input { background: #0f3460; color: #fff; }
+        button { background: #e94560; color: #fff; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        button:hover { background: #ff6b81; }
+        .hidden { display: none; }
+        .players-list { background: #0f3460; padding: 10px; border-radius: 8px; margin: 15px 0; }
+        .role-badge { background: #e94560; padding: 3px 8px; border-radius: 5px; font-size: 12px; }
+        .word-box { background: #0f3460; padding: 20px; border-radius: 10px; margin: 15px 0; font-size: 24px; font-weight: bold; border: 2px dashed #e94560; }
+        .mines-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 15px 0; }
+        .mine-btn { background: #0f3460; border: 2px solid #e94560; color: #fff; padding: 15px 5px; border-radius: 8px; font-weight: bold; cursor: pointer; }
+        .mine-btn:hover { background: #e94560; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>💣 Слова-мины</h1>
+
+        <!-- ЭКРАН ВХОДА -->
+        <div id="login-screen">
+            <input type="text" id="username" placeholder="Ваше имя">
+            <input type="text" id="room-code" placeholder="Код комнаты (для входа)">
+            <button onclick="createRoom()">Создать новую комнату</button>
+            <button onclick="joinRoom()" style="background: #0f3460;">Войти в комнату</button>
+        </div>
+
+        <!-- ИГРОВОЙ ЭКРАН -->
+        <div id="game-screen" class="hidden">
+            <div>Комната: <b id="display-room"></b></div>
+            <div class="players-list">
+                <h3>Игроки:</h3>
+                <div id="players-container"></div>
+            </div>
+
+            <!-- Форма настройки раунда (для создателя) -->
+            <div id="setup-box" class="hidden">
+                <h3>Настройка раунда</h3>
+                <input type="text" id="secret-word" placeholder="Слово для отгадывания">
+                <input type="text" id="mines-list" placeholder="Слова-мины через запятую">
+                <button onclick="startRound()">Начать раунд</button>
+            </div>
+
+            <!-- Игровое поле -->
+            <div id="play-area" class="hidden">
+                <div id="role-info" style="margin-bottom: 10px; font-weight: bold; color: #4ecca3;"></div>
+                
+                <div class="word-box">
+                    <span id="target-word">???</span>
+                </div>
+
+                <h3>Мины:</h3>
+                <div class="mines-grid" id="mines-container"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let currentRoom = '';
+        let myName = '';
+
+        function createRoom() {
+            myName = document.getElementById('username').value.trim();
+            if(!myName) return alert('Введите имя!');
+            socket.emit('createRoom', { name: myName });
+        }
+
+        function joinRoom() {
+            myName = document.getElementById('username').value.trim();
+            currentRoom = document.getElementById('room-code').value.trim().toUpperCase();
+            if(!myName || !currentRoom) return alert('Заполните имя и код комнаты!');
+            socket.emit('joinRoom', { name: myName, room: currentRoom });
+        }
+
+        function startRound() {
+            const word = document.getElementById('secret-word').value.trim();
+            const mines = document.getElementById('mines-list').value.split(',').map(s => s.trim()).filter(Boolean);
+            if(!word || mines.length === 0) return alert('Заполните слово и мины!');
+            socket.emit('startRound', { room: currentRoom, word, mines });
+        }
+
+        function explodeMine(mine) {
+            socket.emit('clickMine', { room: currentRoom, mine });
+        }
+
+        socket.on('roomCreated', (room) => {
+            currentRoom = room;
+            showGameScreen();
+        });
+
+        socket.on('joinedRoom', (room) => {
+            currentRoom = room;
+            showGameScreen();
+        });
+
+        socket.on('updatePlayers', (data) => {
+            const container = document.getElementById('players-container');
+            container.innerHTML = data.players.map(p => `<div>${p.name} ${p.id === data.host ? '<span class="role-badge">Хост</span>' : ''}</div>`).join('');
+            if(socket.id === data.host) {
+                document.getElementById('setup-box').classList.remove('hidden');
+            }
+        });
+
+        socket.on('roundStarted', (gameData) => {
+            document.getElementById('setup-box').classList.add('hidden');
+            document.getElementById('play-area').classList.remove('hidden');
+            
+            const roleInfo = document.getElementById('role-info');
+            const targetWord = document.getElementById('target-word');
+            const minesContainer = document.getElementById('mines-container');
+
+            if(socket.id === gameData.guesser) {
+                roleInfo.innerText = 'Вы — Отгадывающий! Слушайте подсказки и не назовите мину.';
+                targetWord.innerText = '🔒 Скрыто от вас';
+                minesContainer.innerHTML = '<i>Мины скрыты</i>';
+            } else if(socket.id === gameData.explainer) {
+                roleInfo.innerText = 'Вы — Загадывающий! Объясняйте слово, избегая мин.';
+                targetWord.innerText = gameData.word;
+                minesContainer.innerHTML = '<i>Мины скрыты от вас</i>';
+            } else {
+                roleInfo.innerText = 'Вы — Наблюдатель! Слушайте игроков и жмите на мину, если они её произнесли.';
+                targetWord.innerText = gameData.word;
+                minesContainer.innerHTML = gameData.mines.map(m => `<button class="mine-btn" onclick="explodeMine('${m}')">💣 ${m}</button>`).join('');
+            }
+        });
+
+        socket.on('mineExploded', (data) => {
+            alert(`💥 ВЗРЫВ! Была активирована мина: "${data.mine}"`);
+            document.getElementById('play-area').classList.add('hidden');
+        });
+
+        function showGameScreen() {
+            document.getElementById('login-screen').classList.add('hidden');
+            document.getElementById('game-screen').classList.remove('hidden');
+            document.getElementById('display-room').innerText = currentRoom;
+        }
+    </script>
+</body>
+</html>
